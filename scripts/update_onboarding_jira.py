@@ -15,8 +15,23 @@ import argparse
 import base64
 import json
 import os
+import re
 import sys
 import urllib.request
+
+
+def odh_jira_target_version(canonical_version: str) -> str:
+    """Map canonical RHOAI version (x.y or x.y-ea-n) to the ODH Jira Target Version name."""
+    match = re.fullmatch(r"(\d+)\.(\d+)-ea-(\d+)", canonical_version)
+    if match:
+        return f"{match.group(1)}.{match.group(2)} EA{match.group(3)} RHOAI RELEASE"
+    match = re.fullmatch(r"(\d+)\.(\d+)", canonical_version)
+    if match:
+        return f"{match.group(1)}.{match.group(2)} GA RHOAI RELEASE"
+    raise ValueError(
+        f"Cannot map '{canonical_version}' to ODH Jira Target Version "
+        "(expected canonical form x.y or x.y-ea-n)"
+    )
 
 
 def jira_request(url, *, email, token, method="GET", data=None):
@@ -39,6 +54,12 @@ def main():
     p.add_argument("--dockerfile-path", required=True)
     p.add_argument("--short-description", default="")
     p.add_argument("--architectures", default="")
+    p.add_argument(
+        "--target-rhoai-version",
+        default="",
+        help="Canonical RHOAI version (x.y or x.y-ea-n). Required for ODH Target Version; "
+        "optional metadata for RHOAI.",
+    )
     args = p.parse_args()
 
     email = os.environ.get("JIRA_USER_EMAIL", "")
@@ -146,9 +167,23 @@ def main():
     else:
         print("  No known description table found — skipping table update.")
 
-    # --- Set Target Version (RHOAI only) ---
-    if args.product_context == "RHOAI":
+    # --- Set Target Version ---
+    target_version_name = ""
+    if args.product_context == "ODH":
+        if not args.target_rhoai_version:
+            warnings.append(
+                "WARN: --target-rhoai-version not provided for ODH ticket. "
+                "Set Target Version manually in Jira."
+            )
+        else:
+            try:
+                target_version_name = odh_jira_target_version(args.target_rhoai_version)
+            except ValueError as exc:
+                warnings.append(f"WARN: {exc}. Set Target Version manually in Jira.")
+    elif args.product_context == "RHOAI":
         target_version_name = args.repo_branch
+
+    if target_version_name:
         try:
             _, project_versions = jira_request(
                 f"{jira_server}/rest/api/2/project/{jira_id.split('-')[0]}/versions",

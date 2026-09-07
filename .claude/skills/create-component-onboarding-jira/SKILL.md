@@ -158,6 +158,25 @@ _Execute only when `product_context == ODH` and `build_type == Release`. Skip en
 → Store in `odh_release_tag`. Must be non-empty.
   Re-ask if empty.
 
+**Q2.6 — Target RHOAI version (ODH only)**
+
+_Execute only when `product_context == ODH`. Skip entirely for RHOAI._
+
+> Which RHOAI release sprint should this ODH onboarding be tracked against?
+> What is the target RHOAI version?
+> Format: `x.y`, `x.y.0`, `x.y-eaN`, `x.y-ea-N`, `x.y-ea.N`, `x.y.0-eaN`, `x.y.0-ea-N`, or `x.y.0-ea.N`
+> Examples: `3.6`, `3.6.0`, `3.6-ea2`, `3.6-ea-2`, `3.6-ea.2`, `3.6.0-ea2`, `3.6.0-ea-2`, `3.6.0-ea.2`
+>
+> This populates the Jira **Target Version** field (e.g. `3.6 EA2 RHOAI RELEASE`).
+
+→ Validate against the regex: `^\d+\.\d+(?:\.0)?(?:-ea[-.]?\d+)?$`
+  Re-ask if the input does not match, showing the valid examples above.
+
+Transform the validated input to the canonical form and store in `target_rhoai_version`:
+- Extract `VERSION_X` = first integer, `VERSION_Y` = second integer, `VERSION_N` = EA number (after `-ea`, `-ea-`, or `-ea.`), or empty if no EA suffix
+- If `VERSION_N` is non-empty: `target_rhoai_version = "<VERSION_X>.<VERSION_Y>-ea-<VERSION_N>"` (e.g. `3.6-ea-2`)
+- Otherwise: `target_rhoai_version = "<VERSION_X>.<VERSION_Y>"` (e.g. `3.6`)
+
 _If `product_context == RHOAI`:_
 
 **Q2a — Target RHOAI version**
@@ -366,7 +385,7 @@ Component onboarding details collected:
   product_context              : <value>
   build_type / architectures   : <value>
   odh_release_tag              : <value or N/A>   # only shown for ODH Release
-  target_rhoai_version         : <value or N/A>   # only shown for RHOAI
+  target_rhoai_version         : <value or N/A>   # ODH (Jira sprint) and RHOAI
   component_name               : <value>
   release_category             : <value or N/A>   # only shown for RHOAI
   repo_url                     : <value>
@@ -653,6 +672,11 @@ if [[ "$product_context" == "RHOAI" ]]; then
     --short-description "$short_description"
     --architectures "$(IFS=,; echo "${architectures[*]}")"
   )
+fi
+
+# ODH-only: pass target RHOAI version to populate Jira Target Version field
+if [[ "$product_context" == "ODH" ]]; then
+  UPDATE_JIRA_ARGS+=(--target-rhoai-version "$target_rhoai_version")
 fi
 
 uv run --script scripts/update_onboarding_jira.py "$JIRA_URL" "${UPDATE_JIRA_ARGS[@]}"
