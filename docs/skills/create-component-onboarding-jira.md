@@ -18,7 +18,7 @@ A YAML file that drives every downstream onboarding skill. Key fields:
 | `repo_branch` | `main` or `rhoai-3.5-ea.1` |
 | `context_path` | `./` |
 | `dockerfile_path` | `Dockerfile.konflux` |
-| `target_rhoai_version` | `3.5-ea-1` *(RHOAI only)* |
+| `target_rhoai_version` | `3.5-ea-1` *(RHOAI only; drives automation)* / collected for ODH Jira Target Version only |
 | `architectures` | `[x86_64, arm64, ppc64le, s390x]` *(RHOAI only)* |
 | `long_description` / `short_description` | *(RHOAI only)* |
 | `is_operator` | `true` / `false` |
@@ -34,6 +34,7 @@ A YAML file that drives every downstream onboarding skill. Key fields:
 | Label added | `yaml-attached`, `component-onboarding`, `disable-automated-onboarding` (new tickets and existing tickets updated by this skill) |
 | Comment | Summary of component, repo, branch, operator flag |
 | Description table | Populated with component name, repo, branch, Dockerfile, architectures |
+| Target Version | ODH: set from target RHOAI version (e.g. `3.6 EA2 RHOAI RELEASE`); RHOAI: set from derived `repo_branch` |
 
 ## Checks performed before Jira update
 
