@@ -50,6 +50,7 @@ eval "$(bash "$SCRIPTS_DIR/parse_component_details.sh" \
 
 OPERATOR_MANIFEST_SRC_PATH=$(grep -m1  'operator_manifest_src_path:'  "$YAML_FILE" | awk '{print $2}' 2>/dev/null || echo "")
 OPERATOR_MANIFEST_DEST_PATH=$(grep -m1 'operator_manifest_dest_path:' "$YAML_FILE" | awk '{print $2}' 2>/dev/null || echo "")
+OPERATOR_MANIFEST_TYPE=$(grep -m1 'operator_manifest_type:' "$YAML_FILE" | awk '{print $2}' 2>/dev/null | tr -d '"' || echo "")
 
 # Gate: skip if is_operator=false
 if [[ "$IS_OPERATOR" != "true" ]]; then
@@ -98,12 +99,18 @@ if [[ -z "$OPERATOR_MANIFEST_SRC_PATH" || -z "$OPERATOR_MANIFEST_DEST_PATH" ]]; 
   exit 1
 fi
 
-# Ensure operator manifests entry has src/dest (build-config automation may add git-only entries)
+# Ensure operator manifests entry has src/dest (and type: chart when configured).
+# Build-config automation may add git-only entries under additional_meta, causing false skips.
+ENSURE_ARGS=(
+  "$MANIFESTS_CONFIG"
+  --component-name "$COMPONENT_NAME"
+  --src  "$OPERATOR_MANIFEST_SRC_PATH"
+  --dest "$OPERATOR_MANIFEST_DEST_PATH"
+)
+[[ "$OPERATOR_MANIFEST_TYPE" == "chart" ]] && ENSURE_ARGS+=(--type chart)
+
 ENSURE_OUTPUT=$(uv run --script "$SCRIPTS_DIR/edit_yaml.py" ensure-operator-component \
-  "$MANIFESTS_CONFIG" \
-  --component-name "$COMPONENT_NAME" \
-  --src  "$OPERATOR_MANIFEST_SRC_PATH" \
-  --dest "$OPERATOR_MANIFEST_DEST_PATH") || {
+  "${ENSURE_ARGS[@]}") || {
   echo "ERROR: Could not update build/manifests-config.yaml." >&2; exit 1
 }
 echo "$ENSURE_OUTPUT"
@@ -111,9 +118,11 @@ echo "$ENSURE_OUTPUT"
 ENSURE_STATUS=$(echo "$ENSURE_OUTPUT" | awk -F= '/^status=/ {print $2; exit}')
 if [[ "$ENSURE_STATUS" == "complete" ]]; then
   echo "Operator manifests entry '${COMPONENT_NAME}' already complete in manifests-config.yaml."
+  COMPLETE_FIELDS="src/dest"
+  [[ "$OPERATOR_MANIFEST_TYPE" == "chart" ]] && COMPLETE_FIELDS="src/dest/type: chart"
   uv run --script "$SCRIPTS_DIR/update_jira_issue.py" "$JIRA_URL" \
     --add-label "operator-pr-merged" \
-    --comment "Operator manifests entry '${COMPONENT_NAME}' already has src/dest in ${ODH_OPERATOR_PATH}. No PR needed." || true
+    --comment "Operator manifests entry '${COMPONENT_NAME}' already has ${COMPLETE_FIELDS} in ${ODH_OPERATOR_PATH}. No PR needed." || true
   bash "$SCRIPTS_DIR/update_pipeline_state.sh" \
     --state "$PIPELINE_STATE" --step operator --status done
   exit 2
@@ -130,13 +139,23 @@ grep -q "^  ${COMPONENT_NAME}:" "$MANIFESTS_CONFIG" || {
 grep -A5 "^  ${COMPONENT_NAME}:" "$MANIFESTS_CONFIG" | grep -q "^    src:" || {
   echo "ERROR: src not found for $COMPONENT_NAME in manifests-config.yaml after ensure." >&2; exit 1
 }
-grep -A5 "^  ${COMPONENT_NAME}:" "$MANIFESTS_CONFIG" | grep -q "^    dest:" || {
+grep -A8 "^  ${COMPONENT_NAME}:" "$MANIFESTS_CONFIG" | grep -q "^    dest:" || {
   echo "ERROR: dest not found for $COMPONENT_NAME in manifests-config.yaml after ensure." >&2; exit 1
 }
+if [[ "$OPERATOR_MANIFEST_TYPE" == "chart" ]]; then
+  grep -A8 "^  ${COMPONENT_NAME}:" "$MANIFESTS_CONFIG" | grep -q "^    type: chart" || {
+    echo "ERROR: type: chart not found for $COMPONENT_NAME in manifests-config.yaml after ensure." >&2; exit 1
+  }
+fi
 
 if [[ "$ENSURE_STATUS" == "updated" ]]; then
-  COMMIT_MESSAGE="Add src/dest for ${COMPONENT_NAME} in operator manifests config"
-  PR_TITLE="Add src/dest for ${COMPONENT_NAME} in operator manifests"
+  if [[ "$OPERATOR_MANIFEST_TYPE" == "chart" ]]; then
+    COMMIT_MESSAGE="Add src/dest/type for ${COMPONENT_NAME} in operator manifests config"
+    PR_TITLE="Add src/dest/type for ${COMPONENT_NAME} in operator manifests"
+  else
+    COMMIT_MESSAGE="Add src/dest for ${COMPONENT_NAME} in operator manifests config"
+    PR_TITLE="Add src/dest for ${COMPONENT_NAME} in operator manifests"
+  fi
 else
   COMMIT_MESSAGE="Add ${COMPONENT_NAME} to operator manifests config"
   PR_TITLE="Add ${COMPONENT_NAME} to operator manifests"
@@ -158,7 +177,7 @@ for attempt in 1 2 3; do
     --dest-url    "$ODH_OPERATOR_URL" \
     --dest-branch "$OPERATOR_TARGET_BRANCH" \
     --title       "$PR_TITLE" \
-    --description "Ensures '${COMPONENT_NAME}' has src/dest in build/manifests-config.yaml.
+    --description "Ensures '${COMPONENT_NAME}' has required operator manifest fields in build/manifests-config.yaml.
 
 Repo: ${REPO_URL}
 Jira: ${JIRA_URL}" 2>/dev/null) && break

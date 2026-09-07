@@ -24,6 +24,7 @@ A YAML file that drives every downstream onboarding skill. Key fields:
 | `is_operator` | `true` / `false` |
 | `operator_manifest_src_path` | *(operators only)* |
 | `operator_manifest_dest_path` | *(operators only)* |
+| `operator_manifest_type` | *(chart operators only)* — set to `chart` for Helm chart deployments |
 
 ## Jira changes
 

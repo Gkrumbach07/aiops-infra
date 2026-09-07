@@ -17,7 +17,7 @@ Subcommands:
   insert-simple-map-entry <file> --map-key <dot.path.0.nested> --key <k> --value <v>
   append-renovate-repo    <file> --renovate-config <cfg> --name <entry>
   append-build-config-component <file> --component-name <n> [--repo-url <u>] [--version-var <v>] [--repo-branch <b>]
-  ensure-operator-component   <file> --component-name <n> --src <s> --dest <d>
+  ensure-operator-component   <file> --component-name <n> --src <s> --dest <d> [--type chart]
 """
 import argparse
 import sys
@@ -402,34 +402,57 @@ def _operator_map(data):
     return mapping
 
 
-def _operator_entry_complete(entry) -> bool:
-    """True when an operator manifests entry has non-empty src and dest."""
+def _operator_entry_fields(src, dest, manifest_type=""):
+    """Build the operator map entry fields for src/dest and optional chart type."""
+    fields = {"src": src, "dest": dest}
+    if manifest_type == "chart":
+        fields["type"] = "chart"
+    return fields
+
+
+def _operator_entry_complete(entry, manifest_type="") -> bool:
+    """True when an operator manifests entry has the required src/dest (and type when chart)."""
+    if not isinstance(entry, dict):
+        return False
+    if not bool(str(entry.get("src", "")).strip()):
+        return False
+    if not bool(str(entry.get("dest", "")).strip()):
+        return False
+    if manifest_type == "chart" and entry.get("type") != "chart":
+        return False
+    return True
+
+
+def _operator_entry_matches(entry, src, dest, manifest_type="") -> bool:
+    """True when an existing entry already has the expected operator manifest fields."""
     return (
-        isinstance(entry, dict)
-        and bool(str(entry.get("src", "")).strip())
-        and bool(str(entry.get("dest", "")).strip())
+        _operator_entry_complete(entry, manifest_type)
+        and entry.get("src") == src
+        and entry.get("dest") == dest
     )
 
 
-def _ensure_operator_mapping(mapping, component_name, src, dest):
-    """Ensure map[component_name] has src/dest, preserving other keys.
+def _ensure_operator_mapping(mapping, component_name, src, dest, manifest_type=""):
+    """Ensure map[component_name] has src/dest (and type: chart when requested).
 
     Returns one of: complete, appended, updated.
     """
     entry = mapping.get(component_name)
     if entry is None:
-        mapping[component_name] = {"src": src, "dest": dest}
+        mapping[component_name] = _operator_entry_fields(src, dest, manifest_type)
         return "appended"
 
     if not isinstance(entry, dict):
-        mapping[component_name] = {"src": src, "dest": dest}
+        mapping[component_name] = _operator_entry_fields(src, dest, manifest_type)
         return "updated"
 
-    if _operator_entry_complete(entry) and entry.get("src") == src and entry.get("dest") == dest:
+    if _operator_entry_matches(entry, src, dest, manifest_type):
         return "complete"
 
     entry["src"] = src
     entry["dest"] = dest
+    if manifest_type == "chart":
+        entry["type"] = "chart"
     return "updated"
 
 
@@ -467,9 +490,13 @@ def cmd_ensure_operator_component(args):
         print(f"ERROR: 'map' is not a mapping in {path}", file=sys.stderr)
         sys.exit(1)
 
-    status = _ensure_operator_mapping(mapping, args.component_name, args.src, args.dest)
+    manifest_type = args.type or ""
+    status = _ensure_operator_mapping(
+        mapping, args.component_name, args.src, args.dest, manifest_type
+    )
     if status == "complete":
-        print(f"'{args.component_name}' already has src/dest in map — no changes needed.")
+        detail = "src/dest/type" if manifest_type == "chart" else "src/dest"
+        print(f"'{args.component_name}' already has {detail} in map — no changes needed.")
     else:
         _save(path, data, yaml)
         print(f"{status.capitalize()} '{args.component_name}' in map in {path}")
@@ -621,6 +648,7 @@ def main():
     p_eoc.add_argument("--component-name", required=True)
     p_eoc.add_argument("--src", required=True)
     p_eoc.add_argument("--dest", required=True)
+    p_eoc.add_argument("--type", choices=["chart"], default="", help="Optional manifests-config type (e.g. chart)")
 
     # append-renovate-repo
     p8 = sub.add_parser("append-renovate-repo")

@@ -28,6 +28,7 @@ def main():
     p.add_argument("--is-operator", action="store_true", default=False)
     p.add_argument("--operator-manifest-src-path")
     p.add_argument("--operator-manifest-dest-path")
+    p.add_argument("--operator-manifest-type", choices=["chart"], help="Optional Helm chart operator type")
     args = p.parse_args()
 
     product = args.product_context
@@ -82,6 +83,8 @@ def main():
             sys.exit(1)
         lines.append(f"  operator_manifest_src_path: {args.operator_manifest_src_path}")
         lines.append(f"  operator_manifest_dest_path: {args.operator_manifest_dest_path}")
+        if args.operator_manifest_type:
+            lines.append(f"  operator_manifest_type: {args.operator_manifest_type}")
 
     with open(args.output, "w") as f:
         f.write("\n".join(lines) + "\n")

@@ -354,6 +354,12 @@ _Q9b:_
 
 → Store in `operator_manifest_dest_path`. Must be non-empty.
 
+_Q9c:_
+> Does this operator deploy via a Helm chart? (yes / no)
+
+→ Convert: `yes` → `chart`, `no` → empty. Re-ask on any other input.
+→ Store in `operator_manifest_type` when `yes`; omit the field when `no`.
+
 ---
 
 ## Step 4: Show collected values and confirm
@@ -378,6 +384,7 @@ Component onboarding details collected:
   is_operator                  : <value>
   operator_manifest_src_path   : <value or N/A>
   operator_manifest_dest_path  : <value or N/A>
+  operator_manifest_type       : <value or N/A>
 
 Proceed? (yes / no / edit)
 ```
@@ -427,6 +434,9 @@ fi
   --is-operator
   --operator-manifest-src-path "$operator_manifest_src_path"
   --operator-manifest-dest-path "$operator_manifest_dest_path"
+)
+[[ "$is_operator" == "true" && -n "${operator_manifest_type:-}" ]] && YAML_ARGS+=(
+  --operator-manifest-type "$operator_manifest_type"
 )
 
 uv run --script scripts/generate_onboarding_yaml.py "${YAML_ARGS[@]}"
