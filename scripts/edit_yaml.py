@@ -17,6 +17,7 @@ Subcommands:
   insert-simple-map-entry <file> --map-key <dot.path.0.nested> --key <k> --value <v>
   append-renovate-repo    <file> --renovate-config <cfg> --name <entry>
   append-build-config-component <file> --component-name <n> [--repo-url <u>] [--version-var <v>] [--repo-branch <b>]
+  ensure-operator-component   <file> --component-name <n> --src <s> --dest <d>
 """
 import argparse
 import sys
@@ -391,17 +392,55 @@ def cmd_append_build_config_component(args):
     print(f"Added '{args.component_name}' to repo_mappings in {path}")
 
 
+def _operator_map(data):
+    """Return the manifests-config map, creating it when absent."""
+    if "map" not in data or data["map"] is None:
+        data["map"] = {}
+    mapping = data["map"]
+    if not isinstance(mapping, dict):
+        return None
+    return mapping
+
+
+def _operator_entry_complete(entry) -> bool:
+    """True when an operator manifests entry has non-empty src and dest."""
+    return (
+        isinstance(entry, dict)
+        and bool(str(entry.get("src", "")).strip())
+        and bool(str(entry.get("dest", "")).strip())
+    )
+
+
+def _ensure_operator_mapping(mapping, component_name, src, dest):
+    """Ensure map[component_name] has src/dest, preserving other keys.
+
+    Returns one of: complete, appended, updated.
+    """
+    entry = mapping.get(component_name)
+    if entry is None:
+        mapping[component_name] = {"src": src, "dest": dest}
+        return "appended"
+
+    if not isinstance(entry, dict):
+        mapping[component_name] = {"src": src, "dest": dest}
+        return "updated"
+
+    if _operator_entry_complete(entry) and entry.get("src") == src and entry.get("dest") == dest:
+        return "complete"
+
+    entry["src"] = src
+    entry["dest"] = dest
+    return "updated"
+
+
 def cmd_append_operator_component(args):
     """Append a component entry {src, dest} under the 'map' key in manifests-config.yaml."""
     path = _validated_path(args.file)
     yaml = _make_yaml(path)
     data = _load(path, yaml)
 
-    if "map" not in data or data["map"] is None:
-        data["map"] = {}
-
-    mapping = data["map"]
-    if not isinstance(mapping, dict):
+    mapping = _operator_map(data)
+    if mapping is None:
         print(f"ERROR: 'map' is not a mapping in {path}", file=sys.stderr)
         sys.exit(1)
 
@@ -412,6 +451,30 @@ def cmd_append_operator_component(args):
     mapping[args.component_name] = {"src": args.src, "dest": args.dest}
     _save(path, data, yaml)
     print(f"Appended '{args.component_name}' to map in {path}")
+
+
+def cmd_ensure_operator_component(args):
+    """Ensure operator src/dest exist for a component in manifests-config.yaml.
+
+    Prints status=complete|appended|updated to stdout.
+    """
+    path = _validated_path(args.file)
+    yaml = _make_yaml(path)
+    data = _load(path, yaml)
+
+    mapping = _operator_map(data)
+    if mapping is None:
+        print(f"ERROR: 'map' is not a mapping in {path}", file=sys.stderr)
+        sys.exit(1)
+
+    status = _ensure_operator_mapping(mapping, args.component_name, args.src, args.dest)
+    if status == "complete":
+        print(f"'{args.component_name}' already has src/dest in map — no changes needed.")
+    else:
+        _save(path, data, yaml)
+        print(f"{status.capitalize()} '{args.component_name}' in map in {path}")
+
+    print(f"status={status}")
 
 
 def cmd_append_renovate_repo(args):
@@ -552,6 +615,13 @@ def main():
     p_oc.add_argument("--src", required=True)
     p_oc.add_argument("--dest", required=True)
 
+    # ensure-operator-component
+    p_eoc = sub.add_parser("ensure-operator-component")
+    p_eoc.add_argument("file")
+    p_eoc.add_argument("--component-name", required=True)
+    p_eoc.add_argument("--src", required=True)
+    p_eoc.add_argument("--dest", required=True)
+
     # append-renovate-repo
     p8 = sub.add_parser("append-renovate-repo")
     p8.add_argument("file")
@@ -572,6 +642,7 @@ def main():
         "append-renovate-repo":    cmd_append_renovate_repo,
         "append-build-config-component": cmd_append_build_config_component,
         "append-operator-component": cmd_append_operator_component,
+        "ensure-operator-component": cmd_ensure_operator_component,
     }
     dispatch[args.command](args)
 

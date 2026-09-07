@@ -93,36 +93,60 @@ MANIFESTS_CONFIG="$CLONE_DIR/build/manifests-config.yaml"
   echo "ERROR: build/manifests-config.yaml not found in operator repo clone." >&2; exit 1
 }
 
-# Idempotency
-if grep -qF "$COMPONENT_NAME" "$MANIFESTS_CONFIG" 2>/dev/null; then
-  echo "Entry '${COMPONENT_NAME}' already present in manifests-config.yaml."
+if [[ -z "$OPERATOR_MANIFEST_SRC_PATH" || -z "$OPERATOR_MANIFEST_DEST_PATH" ]]; then
+  echo "ERROR: operator_manifest_src_path and operator_manifest_dest_path are required when is_operator=true." >&2
+  exit 1
+fi
+
+# Ensure operator manifests entry has src/dest (build-config automation may add git-only entries)
+ENSURE_OUTPUT=$(uv run --script "$SCRIPTS_DIR/edit_yaml.py" ensure-operator-component \
+  "$MANIFESTS_CONFIG" \
+  --component-name "$COMPONENT_NAME" \
+  --src  "$OPERATOR_MANIFEST_SRC_PATH" \
+  --dest "$OPERATOR_MANIFEST_DEST_PATH") || {
+  echo "ERROR: Could not update build/manifests-config.yaml." >&2; exit 1
+}
+echo "$ENSURE_OUTPUT"
+
+ENSURE_STATUS=$(echo "$ENSURE_OUTPUT" | awk -F= '/^status=/ {print $2; exit}')
+if [[ "$ENSURE_STATUS" == "complete" ]]; then
+  echo "Operator manifests entry '${COMPONENT_NAME}' already complete in manifests-config.yaml."
   uv run --script "$SCRIPTS_DIR/update_jira_issue.py" "$JIRA_URL" \
     --add-label "operator-pr-merged" \
-    --comment "Operator manifests entry '${COMPONENT_NAME}' already present in ${ODH_OPERATOR_PATH}. No PR needed." || true
+    --comment "Operator manifests entry '${COMPONENT_NAME}' already has src/dest in ${ODH_OPERATOR_PATH}. No PR needed." || true
   bash "$SCRIPTS_DIR/update_pipeline_state.sh" \
     --state "$PIPELINE_STATE" --step operator --status done
   exit 2
 fi
 
-# Append manifests entry
-uv run --script "$SCRIPTS_DIR/edit_yaml.py" append-operator-component \
-  "$MANIFESTS_CONFIG" \
-  --component-name "$COMPONENT_NAME" \
-  --src  "$OPERATOR_MANIFEST_SRC_PATH" \
-  --dest "$OPERATOR_MANIFEST_DEST_PATH" || {
-  echo "ERROR: Could not append to build/manifests-config.yaml." >&2; exit 1
+if [[ "$ENSURE_STATUS" != "appended" && "$ENSURE_STATUS" != "updated" ]]; then
+  echo "ERROR: Unexpected ensure-operator-component status: '${ENSURE_STATUS:-<empty>}'" >&2; exit 1
+fi
+
+# Verify the entry was written with src/dest
+grep -q "^  ${COMPONENT_NAME}:" "$MANIFESTS_CONFIG" || {
+  echo "ERROR: $COMPONENT_NAME not found in manifests-config.yaml after ensure." >&2; exit 1
+}
+grep -A5 "^  ${COMPONENT_NAME}:" "$MANIFESTS_CONFIG" | grep -q "^    src:" || {
+  echo "ERROR: src not found for $COMPONENT_NAME in manifests-config.yaml after ensure." >&2; exit 1
+}
+grep -A5 "^  ${COMPONENT_NAME}:" "$MANIFESTS_CONFIG" | grep -q "^    dest:" || {
+  echo "ERROR: dest not found for $COMPONENT_NAME in manifests-config.yaml after ensure." >&2; exit 1
 }
 
-# Verify the entry was written
-grep -q "^  ${COMPONENT_NAME}:" "$MANIFESTS_CONFIG" || {
-  echo "ERROR: $COMPONENT_NAME not found in manifests-config.yaml after insert." >&2; exit 1
-}
+if [[ "$ENSURE_STATUS" == "updated" ]]; then
+  COMMIT_MESSAGE="Add src/dest for ${COMPONENT_NAME} in operator manifests config"
+  PR_TITLE="Add src/dest for ${COMPONENT_NAME} in operator manifests"
+else
+  COMMIT_MESSAGE="Add ${COMPONENT_NAME} to operator manifests config"
+  PR_TITLE="Add ${COMPONENT_NAME} to operator manifests"
+fi
 
 # Commit and push
 bash "$SCRIPTS_DIR/git_commit_push.sh" \
   --clone-dir "$CLONE_DIR" \
   --files     "build/manifests-config.yaml" \
-  --message   "Add ${COMPONENT_NAME} to operator manifests config" \
+  --message   "$COMMIT_MESSAGE" \
   --branch    "$DEST_BRANCH"
 
 # Raise PR
@@ -133,8 +157,8 @@ for attempt in 1 2 3; do
     --src-branch  "$DEST_BRANCH" \
     --dest-url    "$ODH_OPERATOR_URL" \
     --dest-branch "$OPERATOR_TARGET_BRANCH" \
-    --title       "Add ${COMPONENT_NAME} to operator manifests" \
-    --description "Adds '${COMPONENT_NAME}' entry to build/manifests-config.yaml.
+    --title       "$PR_TITLE" \
+    --description "Ensures '${COMPONENT_NAME}' has src/dest in build/manifests-config.yaml.
 
 Repo: ${REPO_URL}
 Jira: ${JIRA_URL}" 2>/dev/null) && break

@@ -22,13 +22,20 @@ deploys the component's manifests.
 build/manifests-config.yaml
 ```
 
-A new entry is **appended** under the `map:` key:
+A new entry is **appended** under the `map:` key when none exists yet:
 
 ```yaml
-- name: <component_name>
-  src: <operator_manifest_src_path>
-  dest: <operator_manifest_dest_path>
+map:
+  <component_name>:
+    src: <operator_manifest_src_path>
+    dest: <operator_manifest_dest_path>
 ```
+
+When the component name is already present but only has build-config automation fields
+(`git.url`, `git.commit`, etc.) without `src`/`dest`, the step updates the existing entry
+in place (preserving git fields) and raises a PR to add the missing operator paths.
+
+The step is considered complete only when both `src` and `dest` are already present.
 
 Where `src` and `dest` come from `operator_manifest_src_path` and
 `operator_manifest_dest_path` in `component_onboarding_details.yaml`.
