@@ -22,13 +22,26 @@ deploys the component's manifests.
 build/manifests-config.yaml
 ```
 
-A new entry is **appended** under the `map:` key:
+A new entry is **appended** under the `map:` key when none exists yet:
 
 ```yaml
-- name: <component_name>
-  src: <operator_manifest_src_path>
-  dest: <operator_manifest_dest_path>
+map:
+  <component_name>:
+    src: <operator_manifest_src_path>
+    dest: <operator_manifest_dest_path>
+    type: chart   # only when operator_manifest_type: chart
 ```
+
+When the component name is already present but only has build-config automation fields
+(`git.url`, `git.commit`, etc.) without `src`/`dest`, the step updates the existing entry
+in place (preserving git fields) and raises a PR to add the missing operator paths.
+
+For Helm chart-based operators, set `operator_manifest_type: chart` in
+`component_onboarding_details.yaml`. The step also ensures `type: chart` is present in
+`manifests-config.yaml`.
+
+The step is considered complete only when both `src` and `dest` are already present, and
+also `type: chart` when `operator_manifest_type: chart` is configured.
 
 Where `src` and `dest` come from `operator_manifest_src_path` and
 `operator_manifest_dest_path` in `component_onboarding_details.yaml`.

@@ -98,6 +98,11 @@
           "description": "Destination path in the odh-operator container image where manifests are copied (required when is_operator is true)",
           "minLength": 1
         },
+        "operator_manifest_type": {
+          "type": "string",
+          "description": "Optional manifests-config entry type for Helm chart-based operators (sets type: chart in rhods-operator build/manifests-config.yaml)",
+          "enum": ["chart"]
+        },
         "long_description": {
           "type": "string",
           "description": "One or two sentences describing what the component does (required when product_context is RHOAI)",

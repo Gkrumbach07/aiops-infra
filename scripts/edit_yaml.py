@@ -17,6 +17,7 @@ Subcommands:
   insert-simple-map-entry <file> --map-key <dot.path.0.nested> --key <k> --value <v>
   append-renovate-repo    <file> --renovate-config <cfg> --name <entry>
   append-build-config-component <file> --component-name <n> [--repo-url <u>] [--version-var <v>] [--repo-branch <b>]
+  ensure-operator-component   <file> --component-name <n> --src <s> --dest <d> [--type chart]
 """
 import argparse
 import sys
@@ -391,17 +392,78 @@ def cmd_append_build_config_component(args):
     print(f"Added '{args.component_name}' to repo_mappings in {path}")
 
 
+def _operator_map(data):
+    """Return the manifests-config map, creating it when absent."""
+    if "map" not in data or data["map"] is None:
+        data["map"] = {}
+    mapping = data["map"]
+    if not isinstance(mapping, dict):
+        return None
+    return mapping
+
+
+def _operator_entry_fields(src, dest, manifest_type=""):
+    """Build the operator map entry fields for src/dest and optional chart type."""
+    fields = {"src": src, "dest": dest}
+    if manifest_type == "chart":
+        fields["type"] = "chart"
+    return fields
+
+
+def _operator_entry_complete(entry, manifest_type="") -> bool:
+    """True when an operator manifests entry has the required src/dest (and type when chart)."""
+    if not isinstance(entry, dict):
+        return False
+    if not bool(str(entry.get("src", "")).strip()):
+        return False
+    if not bool(str(entry.get("dest", "")).strip()):
+        return False
+    if manifest_type == "chart" and entry.get("type") != "chart":
+        return False
+    return True
+
+
+def _operator_entry_matches(entry, src, dest, manifest_type="") -> bool:
+    """True when an existing entry already has the expected operator manifest fields."""
+    return (
+        _operator_entry_complete(entry, manifest_type)
+        and entry.get("src") == src
+        and entry.get("dest") == dest
+    )
+
+
+def _ensure_operator_mapping(mapping, component_name, src, dest, manifest_type=""):
+    """Ensure map[component_name] has src/dest (and type: chart when requested).
+
+    Returns one of: complete, appended, updated.
+    """
+    entry = mapping.get(component_name)
+    if entry is None:
+        mapping[component_name] = _operator_entry_fields(src, dest, manifest_type)
+        return "appended"
+
+    if not isinstance(entry, dict):
+        mapping[component_name] = _operator_entry_fields(src, dest, manifest_type)
+        return "updated"
+
+    if _operator_entry_matches(entry, src, dest, manifest_type):
+        return "complete"
+
+    entry["src"] = src
+    entry["dest"] = dest
+    if manifest_type == "chart":
+        entry["type"] = "chart"
+    return "updated"
+
+
 def cmd_append_operator_component(args):
     """Append a component entry {src, dest} under the 'map' key in manifests-config.yaml."""
     path = _validated_path(args.file)
     yaml = _make_yaml(path)
     data = _load(path, yaml)
 
-    if "map" not in data or data["map"] is None:
-        data["map"] = {}
-
-    mapping = data["map"]
-    if not isinstance(mapping, dict):
+    mapping = _operator_map(data)
+    if mapping is None:
         print(f"ERROR: 'map' is not a mapping in {path}", file=sys.stderr)
         sys.exit(1)
 
@@ -412,6 +474,34 @@ def cmd_append_operator_component(args):
     mapping[args.component_name] = {"src": args.src, "dest": args.dest}
     _save(path, data, yaml)
     print(f"Appended '{args.component_name}' to map in {path}")
+
+
+def cmd_ensure_operator_component(args):
+    """Ensure operator src/dest exist for a component in manifests-config.yaml.
+
+    Prints status=complete|appended|updated to stdout.
+    """
+    path = _validated_path(args.file)
+    yaml = _make_yaml(path)
+    data = _load(path, yaml)
+
+    mapping = _operator_map(data)
+    if mapping is None:
+        print(f"ERROR: 'map' is not a mapping in {path}", file=sys.stderr)
+        sys.exit(1)
+
+    manifest_type = args.type or ""
+    status = _ensure_operator_mapping(
+        mapping, args.component_name, args.src, args.dest, manifest_type
+    )
+    if status == "complete":
+        detail = "src/dest/type" if manifest_type == "chart" else "src/dest"
+        print(f"'{args.component_name}' already has {detail} in map — no changes needed.")
+    else:
+        _save(path, data, yaml)
+        print(f"{status.capitalize()} '{args.component_name}' in map in {path}")
+
+    print(f"status={status}")
 
 
 def cmd_append_renovate_repo(args):
@@ -552,6 +642,14 @@ def main():
     p_oc.add_argument("--src", required=True)
     p_oc.add_argument("--dest", required=True)
 
+    # ensure-operator-component
+    p_eoc = sub.add_parser("ensure-operator-component")
+    p_eoc.add_argument("file")
+    p_eoc.add_argument("--component-name", required=True)
+    p_eoc.add_argument("--src", required=True)
+    p_eoc.add_argument("--dest", required=True)
+    p_eoc.add_argument("--type", choices=["chart"], default="", help="Optional manifests-config type (e.g. chart)")
+
     # append-renovate-repo
     p8 = sub.add_parser("append-renovate-repo")
     p8.add_argument("file")
@@ -572,6 +670,7 @@ def main():
         "append-renovate-repo":    cmd_append_renovate_repo,
         "append-build-config-component": cmd_append_build_config_component,
         "append-operator-component": cmd_append_operator_component,
+        "ensure-operator-component": cmd_ensure_operator_component,
     }
     dispatch[args.command](args)
 
