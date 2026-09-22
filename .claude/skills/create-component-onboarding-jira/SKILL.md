@@ -353,13 +353,30 @@ Print: `repo_branch auto-set to: <repo_branch>`
   > For RHOAI components, the Dockerfile name must contain the string `Dockerfile.konflux`
   > (e.g. `Dockerfile.konflux`, `docker/Dockerfile.konflux.cuda`)
 
-**Q8 — Operator/controller**
+**Q8 — Operator or controller**
 > Is this component an operator or controller? (yes / no)
 
-→ Convert: `yes` → `true`, `no` → `false`. Re-ask on any other input.
-→ Store in `is_operator` (boolean).
+→ If `no`: store `is_operator = false`, skip Q8b and Q9 entirely.
+→ If `yes`: proceed to Q8b.
+→ Re-ask on any other input.
+
+**Q8b — Modular operator check (only when answer to Q8 is yes)**
+
+_Execute only when the answer to Q8 was yes. Skip entirely otherwise._
+
+> Is this a modular operator?
+>
+> A modular operator provides its own manifests that are included in the ODH operator bundle.
+> **If the operator does not provide any manifests, it is NOT a modular operator.**
+> (yes / no)
+
+→ If `yes`: store `is_operator = true`, proceed to Q9.
+→ If `no`: store `is_operator = false`, skip Q9 entirely.
+→ Re-ask on any other input.
 
 **Q9 — Operator manifest paths (only when `is_operator == true`)**
+
+_Execute only when `is_operator == true` (i.e., the component is a modular operator). Skip entirely otherwise._
 
 _Q9a:_
 > What is the relative path to the component's manifests in the git repo?

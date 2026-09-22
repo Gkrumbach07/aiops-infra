@@ -86,7 +86,7 @@
         },
         "is_operator": {
           "type": "boolean",
-          "description": "Whether the component is an operator or controller; controls whether operator manifest paths are required"
+          "description": "Whether the component is a modular operator — one that provides its own manifests included in the ODH operator bundle. Set to false for operators or controllers that do not provide manifests (they are not modular operators). Controls whether operator manifest paths are required."
         },
         "operator_manifest_src_path": {
           "type": "string",
