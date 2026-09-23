@@ -70,7 +70,8 @@ def main():
         lines.append("  architectures:")
         for arch in archs:
             lines.append(f"    - {arch}")
-        lines.append(f"  target_rhoai_version: {args.target_rhoai_version}")
+        # Quoted so values like 3.6 stay strings instead of parsing as YAML floats
+        lines.append(f"  target_rhoai_version: \"{args.target_rhoai_version}\"")
         lines.append(f"  release_category: \"{args.release_category}\"")
         lines.append(f"  long_description: {args.long_description or ''}")
         lines.append(f"  short_description: {args.short_description or ''}")
