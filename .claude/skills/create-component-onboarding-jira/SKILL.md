@@ -689,10 +689,8 @@ if [[ "$product_context" == "RHOAI" ]]; then
   )
 fi
 
-# ODH-only: pass target RHOAI version to populate Jira Target Version field
-if [[ "$product_context" == "ODH" ]]; then
-  UPDATE_JIRA_ARGS+=(--target-rhoai-version "$target_rhoai_version")
-fi
+# Pass target RHOAI version to populate Jira Target Version field (e.g. 3.6 GA RHOAI RELEASE)
+UPDATE_JIRA_ARGS+=(--target-rhoai-version "$target_rhoai_version")
 
 uv run --script scripts/update_onboarding_jira.py "$JIRA_URL" "${UPDATE_JIRA_ARGS[@]}"
 ```

@@ -181,7 +181,14 @@ def main():
             except ValueError as exc:
                 warnings.append(f"WARN: {exc}. Set Target Version manually in Jira.")
     elif args.product_context == "RHOAI":
-        target_version_name = args.repo_branch
+        # Same "x.y GA/EAn RHOAI RELEASE" naming as ODH; the rhoai-x.y versions are archived
+        if args.target_rhoai_version:
+            try:
+                target_version_name = odh_jira_target_version(args.target_rhoai_version)
+            except ValueError as exc:
+                warnings.append(f"WARN: {exc}. Set Target Version manually in Jira.")
+        else:
+            target_version_name = args.repo_branch
 
     if target_version_name:
         try:
